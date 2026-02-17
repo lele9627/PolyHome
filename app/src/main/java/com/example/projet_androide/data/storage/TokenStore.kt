@@ -1,4 +1,4 @@
-package com.victor_olivier.projet_androide.data.storage
+package com.example.projet_androide.data.storage
 
 import android.content.Context
 

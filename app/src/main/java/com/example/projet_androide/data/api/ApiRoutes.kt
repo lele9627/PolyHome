@@ -1,4 +1,4 @@
-package com.victor_olivier.projet_androide.data.api
+package com.example.projet_androide.data.api
 
 object ApiRoutes {
     const val BASE = "https://polyhome.lesmoulinsdudev.com"

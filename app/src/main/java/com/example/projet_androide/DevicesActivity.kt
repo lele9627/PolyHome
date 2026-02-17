@@ -1,4 +1,4 @@
-package com.victor_olivier.projet_androide
+package com.example.projet_androide
 
 import android.content.Intent
 import android.net.Uri
@@ -27,11 +27,11 @@ import androidx.browser.customtabs.CustomTabsSession
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.switchmaterial.SwitchMaterial
-import com.victor_olivier.projet_androide.data.api.Api
-import com.victor_olivier.projet_androide.data.api.ApiRoutes
-import com.victor_olivier.projet_androide.data.model.Device
-import com.victor_olivier.projet_androide.data.model.DevicesResponse
-import com.victor_olivier.projet_androide.data.storage.TokenStore
+import com.example.projet_androide.data.api.Api
+import com.example.projet_androide.data.api.ApiRoutes
+import com.example.projet_androide.data.model.Device
+import com.example.projet_androide.data.model.DevicesResponse
+import com.example.projet_androide.data.storage.TokenStore
 
 class DevicesActivity : AppCompatActivity() {
 

@@ -1,4 +1,4 @@
-package com.victor_olivier.projet_androide
+package com.example.projet_androide
 
 import android.content.Intent
 import android.os.Bundle

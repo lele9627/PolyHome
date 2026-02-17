@@ -1,4 +1,4 @@
-package com.victor_olivier.projet_androide.data.api
+package com.example.projet_androide.data.api
 
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken

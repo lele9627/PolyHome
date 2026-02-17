@@ -1,4 +1,4 @@
-package com.victor_olivier.projet_androide
+package com.example.projet_androide
 
 import android.content.Intent
 import android.os.Bundle
@@ -13,12 +13,12 @@ import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import com.victor_olivier.projet_androide.data.api.Api
-import com.victor_olivier.projet_androide.data.api.ApiRoutes
-import com.victor_olivier.projet_androide.data.model.AuthRequest
-import com.victor_olivier.projet_androide.data.model.AuthResponse
-import com.victor_olivier.projet_androide.data.model.HouseSummary
-import com.victor_olivier.projet_androide.data.storage.TokenStore
+import com.example.projet_androide.data.api.Api
+import com.example.projet_androide.data.api.ApiRoutes
+import com.example.projet_androide.data.model.AuthRequest
+import com.example.projet_androide.data.model.AuthResponse
+import com.example.projet_androide.data.model.HouseSummary
+import com.example.projet_androide.data.storage.TokenStore
 
 class LoginActivity : AppCompatActivity() {
 
