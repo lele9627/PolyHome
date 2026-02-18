@@ -22,38 +22,92 @@
             android:textSize="26sp"
             android:textStyle="bold" />
 
-        <EditText
-            android:id="@+id/etLogin"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:autofillHints="username"
-            android:backgroundTint="@color/app_text_primary"
-            android:hint="Login"
-            android:inputType="textPersonName"
-            android:padding="12dp"
-            android:textColor="@color/app_text_primary"
-            android:textColorHint="@color/app_text_hint" />
+            android:background="@drawable/bg_device_item"
+            android:orientation="vertical"
+            android:padding="14dp">
 
-        <EditText
-            android:id="@+id/etPassword"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:autofillHints="password"
-            android:backgroundTint="@color/app_text_primary"
-            android:hint="Mot de passe"
-            android:inputType="textPassword"
-            android:padding="12dp"
-            android:textColor="@color/app_text_primary"
-            android:textColorHint="@color/app_text_hint" />
+            <EditText
+                android:id="@+id/etLogin"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:autofillHints="username"
+                android:backgroundTint="@color/app_text_primary"
+                android:hint="Login"
+                android:inputType="textPersonName"
+                android:padding="10dp"
+                android:textColor="@color/app_text_primary"
+                android:textColorHint="@color/app_text_hint"
+                android:visibility="gone" />
 
-        <Button
-            android:id="@+id/btnDoLogin"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:minHeight="48dp"
-            android:text="Se connecter" />
+            <TextView
+                android:id="@+id/tvSavedAccountsLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Choisir un compte enregistré"
+                android:textColor="@color/app_text_secondary"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <Spinner
+                android:id="@+id/spinnerSavedAccounts"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:background="@drawable/bg_device_item"
+                android:popupBackground="@color/app_surface"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/btnAddConnection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Ajouter une connexion"
+                android:visibility="gone" />
+
+            <EditText
+                android:id="@+id/etPassword"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:autofillHints="password"
+                android:backgroundTint="@color/app_text_primary"
+                android:hint="Mot de passe"
+                android:inputType="textPassword"
+                android:padding="10dp"
+                android:textColor="@color/app_text_primary"
+                android:textColorHint="@color/app_text_hint"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/btnBackToSaved"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Revenir aux comptes enregistrés"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/tvTokenHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="Sélectionne un compte enregistré pour te connecter avec son token."
+                android:textColor="@color/app_text_hint"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btnDoLogin"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:minHeight="48dp"
+                android:text="Se connecter" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/tvGoToRegister"

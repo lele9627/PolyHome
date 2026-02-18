@@ -1,6 +1,12 @@
 package com.example.projet_androide
 
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -15,6 +21,9 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.ArrayAdapter
 import android.widget.CheckBox
+import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
@@ -24,14 +33,23 @@ import androidx.browser.customtabs.CustomTabsClient
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.browser.customtabs.CustomTabsServiceConnection
 import androidx.browser.customtabs.CustomTabsSession
+import androidx.core.widget.NestedScrollView
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.example.projet_androide.data.api.Api
 import com.example.projet_androide.data.api.ApiRoutes
 import com.example.projet_androide.data.model.Device
 import com.example.projet_androide.data.model.DevicesResponse
+import com.example.projet_androide.data.model.HouseAccessUser
+import com.example.projet_androide.data.model.HouseSummary
+import com.example.projet_androide.data.model.HouseUserPayload
 import com.example.projet_androide.data.storage.TokenStore
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.EncodeHintType
+import com.google.zxing.qrcode.QRCodeWriter
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 
 class DevicesActivity : AppCompatActivity() {
 
@@ -50,6 +68,8 @@ class DevicesActivity : AppCompatActivity() {
         private val COMMAND_OFF_CANDIDATES = listOf("off", "close", "down", "turn off", "turn_off")
     }
 
+    private enum class FloorZone { GROUND, FIRST }
+
     private data class CommandPayload(val command: String)
 
     private data class CommandAttempt(
@@ -60,9 +80,12 @@ class DevicesActivity : AppCompatActivity() {
 
     private var houseId: Int = -1
     private var token: String? = null
+    private var currentUsername: String = ""
     private lateinit var houseUrl: String
 
     private lateinit var webHouse: WebView
+    private lateinit var scrollDevices: NestedScrollView
+    private lateinit var spinnerHouse: Spinner
     private lateinit var spinnerType: Spinner
     private lateinit var spinnerState: Spinner
     private lateinit var containerDevices: LinearLayout
@@ -73,6 +96,8 @@ class DevicesActivity : AppCompatActivity() {
     private lateinit var tvShuttersOpen: TextView
     private lateinit var tvDoorsOpen: TextView
     private lateinit var tvGarageOpen: TextView
+    private lateinit var ivHouseQr: ImageView
+    private var houseQrBitmap: Bitmap? = null
 
     private lateinit var panelComponents: View
     private lateinit var panelGroup: View
@@ -82,9 +107,30 @@ class DevicesActivity : AppCompatActivity() {
     private lateinit var btnBatchOn: MaterialButton
     private lateinit var btnBatchOff: MaterialButton
     private lateinit var btnClearSelection: MaterialButton
+    private lateinit var btnGroupLightsOn: MaterialButton
+    private lateinit var btnGroupLightsOff: MaterialButton
+    private lateinit var btnGroupShuttersOpen: MaterialButton
+    private lateinit var btnGroupShuttersClose: MaterialButton
+    private lateinit var btnGroupGarageOpen: MaterialButton
+    private lateinit var btnGroupGarageClose: MaterialButton
+    private lateinit var btnGroupLightsGroundOn: MaterialButton
+    private lateinit var btnGroupLightsGroundOff: MaterialButton
+    private lateinit var btnGroupLightsFirstOn: MaterialButton
+    private lateinit var btnGroupLightsFirstOff: MaterialButton
+    private lateinit var btnGroupShuttersGroundOpen: MaterialButton
+    private lateinit var btnGroupShuttersGroundClose: MaterialButton
+    private lateinit var btnGroupShuttersFirstOpen: MaterialButton
+    private lateinit var btnGroupShuttersFirstClose: MaterialButton
+    private lateinit var etUserLogin: EditText
+    private lateinit var btnAddUser: MaterialButton
+    private lateinit var btnRemoveUser: MaterialButton
+    private lateinit var btnRefreshUsers: MaterialButton
+    private lateinit var containerHouseUsers: LinearLayout
 
     private val allDevices = arrayListOf<Device>()
     private val filteredDevices = arrayListOf<Device>()
+    private val houseUsers = arrayListOf<HouseAccessUser>()
+    private val houses = arrayListOf<HouseSummary>()
     private val selectedDeviceIds = linkedSetOf<String>()
     private val pendingDeviceIds = linkedSetOf<String>()
 
@@ -97,10 +143,20 @@ class DevicesActivity : AppCompatActivity() {
 
     private var pendingBrowserInitRetry = false
     private var alreadyOpenedCustomTabForInit = false
+    private var selectedHouseOwner = false
+    private var houseSpinnerReady = false
 
     private var customTabsSession: CustomTabsSession? = null
     private var serviceConnection: CustomTabsServiceConnection? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val liveRefreshRunnable = object : Runnable {
+        override fun run() {
+            if (!isFinishing && !isDestroyed) {
+                loadDevices(silent = true)
+                mainHandler.postDelayed(this, 5000L)
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -109,14 +165,15 @@ class DevicesActivity : AppCompatActivity() {
         houseId = intent.getIntExtra("houseId", -1)
         val tokenStore = TokenStore(this)
         token = tokenStore.getToken()
+        currentUsername = tokenStore.getUsername()?.trim().orEmpty()
 
-        if (houseId == -1 || token.isNullOrBlank()) {
-            Toast.makeText(this, "houseId/token manquant", Toast.LENGTH_SHORT).show()
+        if (token.isNullOrBlank()) {
+            Toast.makeText(this, "Token manquant", Toast.LENGTH_SHORT).show()
             finish()
             return
         }
 
-        houseUrl = ApiRoutes.HOUSE_BROWSER(houseId)
+        houseUrl = if (houseId > 0) ApiRoutes.HOUSE_BROWSER(houseId) else ApiRoutes.BASE
 
         val toolbar = findViewById<MaterialToolbar>(R.id.toolbarDevices)
         toolbar.title = "Maison #$houseId"
@@ -132,6 +189,8 @@ class DevicesActivity : AppCompatActivity() {
         }
 
         webHouse = findViewById(R.id.webHouse)
+        scrollDevices = findViewById(R.id.scrollDevices)
+        spinnerHouse = findViewById(R.id.spinnerHouse)
         spinnerType = findViewById(R.id.spinnerType)
         spinnerState = findViewById(R.id.spinnerState)
         containerDevices = findViewById(R.id.containerDevices)
@@ -142,6 +201,7 @@ class DevicesActivity : AppCompatActivity() {
         tvShuttersOpen = findViewById(R.id.tvShuttersOpen)
         tvDoorsOpen = findViewById(R.id.tvDoorsOpen)
         tvGarageOpen = findViewById(R.id.tvGarageOpen)
+        ivHouseQr = findViewById(R.id.ivHouseQr)
 
         panelComponents = findViewById(R.id.panelComponents)
         panelGroup = findViewById(R.id.panelGroup)
@@ -151,6 +211,25 @@ class DevicesActivity : AppCompatActivity() {
         btnBatchOn = findViewById(R.id.btnBatchOn)
         btnBatchOff = findViewById(R.id.btnBatchOff)
         btnClearSelection = findViewById(R.id.btnClearSelection)
+        btnGroupLightsOn = findViewById(R.id.btnGroupLightsOn)
+        btnGroupLightsOff = findViewById(R.id.btnGroupLightsOff)
+        btnGroupShuttersOpen = findViewById(R.id.btnGroupShuttersOpen)
+        btnGroupShuttersClose = findViewById(R.id.btnGroupShuttersClose)
+        btnGroupGarageOpen = findViewById(R.id.btnGroupGarageOpen)
+        btnGroupGarageClose = findViewById(R.id.btnGroupGarageClose)
+        btnGroupLightsGroundOn = findViewById(R.id.btnGroupLightsGroundOn)
+        btnGroupLightsGroundOff = findViewById(R.id.btnGroupLightsGroundOff)
+        btnGroupLightsFirstOn = findViewById(R.id.btnGroupLightsFirstOn)
+        btnGroupLightsFirstOff = findViewById(R.id.btnGroupLightsFirstOff)
+        btnGroupShuttersGroundOpen = findViewById(R.id.btnGroupShuttersGroundOpen)
+        btnGroupShuttersGroundClose = findViewById(R.id.btnGroupShuttersGroundClose)
+        btnGroupShuttersFirstOpen = findViewById(R.id.btnGroupShuttersFirstOpen)
+        btnGroupShuttersFirstClose = findViewById(R.id.btnGroupShuttersFirstClose)
+        etUserLogin = findViewById(R.id.etUserLogin)
+        btnAddUser = findViewById(R.id.btnAddUser)
+        btnRemoveUser = findViewById(R.id.btnRemoveUser)
+        btnRefreshUsers = findViewById(R.id.btnRefreshUsers)
+        containerHouseUsers = findViewById(R.id.containerHouseUsers)
 
         // Demande utilisateur : onglet composants fermé au démarrage
         panelComponents.visibility = View.GONE
@@ -159,14 +238,17 @@ class DevicesActivity : AppCompatActivity() {
 
         tvHouseId.text = "Maison : #$houseId"
         tvOwner.text = "Propriétaire : (à venir)"
+        renderHouseQrCode()
+        ivHouseQr.setOnClickListener { showQrDialog() }
 
         setupAccordion(findViewById(R.id.btnToggleComponents), panelComponents)
         setupAccordion(findViewById(R.id.btnToggleGroup), panelGroup)
         setupAccordion(findViewById(R.id.btnToggleUsers), panelUsers)
+        setupGroupButtons()
 
-        findViewById<View>(R.id.btnAddUser).setOnClickListener {
-            Toast.makeText(this, "Add utilisateur (à venir)", Toast.LENGTH_SHORT).show()
-        }
+        btnAddUser.setOnClickListener { addUserAccess() }
+        btnRemoveUser.setOnClickListener { removeUserAccess() }
+        btnRefreshUsers.setOnClickListener { loadHouseUsers(silent = false) }
 
         btnSelectAll.setOnClickListener {
             selectedDeviceIds.clear()
@@ -186,23 +268,37 @@ class DevicesActivity : AppCompatActivity() {
 
         setupStateSpinner()
         setupTypeSpinner(listOf(FILTER_ALL))
+        setupHouseSpinner(emptyList())
 
         setupWebView(webHouse)
-        webHouse.loadUrl(houseUrl)
         warmupChromeAndPrefetch(houseUrl)
-        loadDevices()
+        loadHouses()
     }
 
     override fun onResume() {
         super.onResume()
+        mainHandler.postDelayed(liveRefreshRunnable, 1200L)
         if (pendingBrowserInitRetry) {
             pendingBrowserInitRetry = false
             loadDevices()
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+        mainHandler.removeCallbacks(liveRefreshRunnable)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        mainHandler.removeCallbacks(liveRefreshRunnable)
+        serviceConnection?.let {
+            runCatching { unbindService(it) }
+        }
+    }
+
     private fun doLogout() {
-        TokenStore(this).clearToken()
+        TokenStore(this).clearActiveSession()
         Toast.makeText(this, "Déconnecté", Toast.LENGTH_SHORT).show()
         val i = Intent(this, MainActivity::class.java)
         i.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -215,6 +311,10 @@ class DevicesActivity : AppCompatActivity() {
             val willShow = panel.visibility != View.VISIBLE
             panel.visibility = if (willShow) View.VISIBLE else View.GONE
             if (panel.id == R.id.panelComponents && willShow) applyFiltersAndRender()
+            if (panel.id == R.id.panelUsers && willShow) loadHouseUsers(silent = true)
+            if (willShow) {
+                mainHandler.post { scrollDevices.smoothScrollTo(0, panel.bottom) }
+            }
         }
     }
 
@@ -226,18 +326,22 @@ class DevicesActivity : AppCompatActivity() {
         s.useWideViewPort = true
         s.loadWithOverviewMode = true
         s.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+        webView.isNestedScrollingEnabled = false
 
         webView.webChromeClient = WebChromeClient()
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean = false
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                loadDevices()
+                view?.let { hideLargeQrInWebView(it) }
             }
         }
     }
 
     private fun warmupChromeAndPrefetch(url: String) {
+        serviceConnection?.let {
+            runCatching { unbindService(it) }
+        }
         serviceConnection = object : CustomTabsServiceConnection() {
             override fun onCustomTabsServiceConnected(name: android.content.ComponentName, client: CustomTabsClient) {
                 client.warmup(0L)
@@ -261,9 +365,138 @@ class DevicesActivity : AppCompatActivity() {
         if (alreadyOpenedCustomTabForInit) return
         alreadyOpenedCustomTabForInit = true
 
-        val intent = CustomTabsIntent.Builder(customTabsSession).setShowTitle(true).build()
         pendingBrowserInitRetry = true
+        openHouseInCustomTab(url)
+    }
+
+    private fun openHouseInCustomTab(url: String) {
+        val intent = CustomTabsIntent.Builder(customTabsSession).setShowTitle(true).build()
         intent.launchUrl(this, Uri.parse(url))
+    }
+
+    private fun setupHouseSpinner(items: List<String>) {
+        spinnerHouse.adapter = createSpinnerAdapter(items.ifEmpty { listOf("Chargement...") })
+        spinnerHouse.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (!houseSpinnerReady || position !in houses.indices) return
+                val picked = houses[position]
+                if (picked.houseId != houseId) switchToHouse(picked)
+            }
+
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+        }
+    }
+
+    private fun loadHouses() {
+        val t = token ?: return
+        Api().get<List<HouseSummary>>(
+            ApiRoutes.HOUSES,
+            onSuccess = { code, body ->
+                if (code != 200 || body.isNullOrEmpty()) {
+                    Toast.makeText(this, "Impossible de charger les maisons ($code)", Toast.LENGTH_SHORT).show()
+                    return@get
+                }
+
+                houses.clear()
+                houses.addAll(body)
+
+                val labels = houses.map {
+                    val access = if (it.owner) "Propriétaire" else "Accès partagé"
+                    "Maison #${it.houseId} • $access"
+                }
+                setupHouseSpinner(labels)
+
+                val initialIndex = houses.indexOfFirst { it.houseId == houseId }.takeIf { it >= 0 }
+                    ?: houses.indexOfFirst { it.owner }.takeIf { it >= 0 }
+                    ?: 0
+
+                houseSpinnerReady = false
+                spinnerHouse.setSelection(initialIndex, false)
+                val picked = houses[initialIndex]
+                switchToHouse(picked)
+                houseSpinnerReady = true
+            },
+            securityToken = t
+        )
+    }
+
+    private fun switchToHouse(house: HouseSummary) {
+        houseId = house.houseId
+        selectedHouseOwner = house.owner
+        houseUrl = ApiRoutes.HOUSE_BROWSER(houseId)
+
+        findViewById<MaterialToolbar>(R.id.toolbarDevices).title = "Maison #$houseId"
+        tvHouseId.text = "Maison : #$houseId"
+        renderHouseQrCode()
+        webHouse.loadUrl(houseUrl)
+        warmupChromeAndPrefetch(houseUrl)
+
+        selectedDeviceIds.clear()
+        pendingDeviceIds.clear()
+        allDevices.clear()
+        filteredDevices.clear()
+        houseUsers.clear()
+        containerDevices.removeAllViews()
+        containerHouseUsers.removeAllViews()
+        panelComponents.visibility = View.GONE
+        panelGroup.visibility = View.GONE
+        panelUsers.visibility = View.GONE
+        updateUsersAccessState()
+        loadHouseUsers(silent = true)
+        loadDevices()
+    }
+
+    private fun setupGroupButtons() {
+        btnGroupLightsOn.setOnClickListener { executeGroupCommand(TYPE_LIGHT, true) }
+        btnGroupLightsOff.setOnClickListener { executeGroupCommand(TYPE_LIGHT, false) }
+        btnGroupShuttersOpen.setOnClickListener { executeGroupCommand(TYPE_SHUTTER, true) }
+        btnGroupShuttersClose.setOnClickListener { executeGroupCommand(TYPE_SHUTTER, false) }
+        btnGroupGarageOpen.setOnClickListener { executeGroupCommand(TYPE_GARAGE, true) }
+        btnGroupGarageClose.setOnClickListener { executeGroupCommand(TYPE_GARAGE, false) }
+
+        btnGroupLightsGroundOn.setOnClickListener { executeGroupCommandByFloor(TYPE_LIGHT, FloorZone.GROUND, true) }
+        btnGroupLightsGroundOff.setOnClickListener { executeGroupCommandByFloor(TYPE_LIGHT, FloorZone.GROUND, false) }
+        btnGroupLightsFirstOn.setOnClickListener { executeGroupCommandByFloor(TYPE_LIGHT, FloorZone.FIRST, true) }
+        btnGroupLightsFirstOff.setOnClickListener { executeGroupCommandByFloor(TYPE_LIGHT, FloorZone.FIRST, false) }
+        btnGroupShuttersGroundOpen.setOnClickListener { executeGroupCommandByFloor(TYPE_SHUTTER, FloorZone.GROUND, true) }
+        btnGroupShuttersGroundClose.setOnClickListener { executeGroupCommandByFloor(TYPE_SHUTTER, FloorZone.GROUND, false) }
+        btnGroupShuttersFirstOpen.setOnClickListener { executeGroupCommandByFloor(TYPE_SHUTTER, FloorZone.FIRST, true) }
+        btnGroupShuttersFirstClose.setOnClickListener { executeGroupCommandByFloor(TYPE_SHUTTER, FloorZone.FIRST, false) }
+    }
+
+    private fun executeGroupCommand(typeKey: String, targetOn: Boolean, excludeGarage: Boolean = false) {
+        if (isBatchRunning) return
+        val targets = allDevices.filter { d ->
+            val typeMatch = d.isType(typeKey)
+            typeMatch && (!excludeGarage || !d.isType(TYPE_GARAGE))
+        }
+
+        if (targets.isEmpty()) {
+            Toast.makeText(this, "Aucun composant compatible", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        isBatchRunning = true
+        updateBatchButtonsState()
+        renderDeviceRows()
+        executeCommandAtIndex(targets, 0, targetOn, successCount = 0)
+    }
+
+    private fun executeGroupCommandByFloor(typeKey: String, floor: FloorZone, targetOn: Boolean) {
+        if (isBatchRunning) return
+        val floorTargets = allDevices.filter { d ->
+            d.isType(typeKey) && resolveFloorZone(d) == floor
+        }
+        if (floorTargets.isEmpty()) {
+            val floorLabel = if (floor == FloorZone.GROUND) "rez-de-chaussée" else "1er étage"
+            Toast.makeText(this, "Aucun ${typeKey} détecté pour $floorLabel", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        isBatchRunning = true
+        updateBatchButtonsState()
+        renderDeviceRows()
+        executeCommandAtIndex(floorTargets, 0, targetOn, successCount = 0)
     }
 
     private fun setupTypeSpinner(types: List<String>) {
@@ -299,7 +532,8 @@ class DevicesActivity : AppCompatActivity() {
         }
     }
 
-    private fun loadDevices() {
+    private fun loadDevices(silent: Boolean = false) {
+        if (houseId <= 0) return
         if (isLoadingDevices) return
         val t = token ?: return
         isLoadingDevices = true
@@ -325,7 +559,7 @@ class DevicesActivity : AppCompatActivity() {
                     if (code == 500 && !devicesLoadedAtLeastOnce) {
                         Toast.makeText(this, "Initialisation maison…", Toast.LENGTH_SHORT).show()
                         openHouseInCustomTabForInit(houseUrl)
-                    } else {
+                    } else if (!silent) {
                         Toast.makeText(this, "Erreur devices ($code)", Toast.LENGTH_SHORT).show()
                     }
                 }
@@ -334,16 +568,269 @@ class DevicesActivity : AppCompatActivity() {
         )
     }
 
+    private fun loadHouseUsers(silent: Boolean = false) {
+        if (houseId <= 0) return
+        val t = token ?: return
+        Api().get<List<HouseAccessUser>>(
+            ApiRoutes.HOUSE_USERS(houseId),
+            onSuccess = { code, body ->
+                if (code == 200 && body != null) {
+                    houseUsers.clear()
+                    houseUsers.addAll(body.sortedBy { it.userLogin.lowercase() })
+                    renderHouseUsers()
+                } else if (!silent) {
+                    Toast.makeText(this, "Erreur utilisateurs ($code)", Toast.LENGTH_SHORT).show()
+                }
+            },
+            securityToken = t
+        )
+    }
+
+    private fun addUserAccess() {
+        if (!selectedHouseOwner) {
+            Toast.makeText(this, "Seul le propriétaire peut donner un accès", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val login = etUserLogin.text.toString().trim()
+        if (login.isBlank()) {
+            Toast.makeText(this, "Saisis un login utilisateur", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val t = token ?: return
+        Api().post<HouseUserPayload>(
+            ApiRoutes.HOUSE_USERS(houseId),
+            HouseUserPayload(login),
+            onSuccess = { code ->
+                when (code) {
+                    200 -> {
+                        Toast.makeText(this, "Accès accordé", Toast.LENGTH_SHORT).show()
+                        etUserLogin.text?.clear()
+                        loadHouseUsers(silent = true)
+                    }
+                    409 -> Toast.makeText(this, "Utilisateur déjà associé", Toast.LENGTH_SHORT).show()
+                    403 -> Toast.makeText(this, "Action non autorisée", Toast.LENGTH_SHORT).show()
+                    else -> Toast.makeText(this, "Erreur ajout ($code)", Toast.LENGTH_SHORT).show()
+                }
+            },
+            securityToken = t
+        )
+    }
+
+    private fun removeUserAccess() {
+        if (!selectedHouseOwner) {
+            Toast.makeText(this, "Seul le propriétaire peut retirer un accès", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val login = etUserLogin.text.toString().trim()
+        if (login.isBlank()) {
+            Toast.makeText(this, "Saisis un login utilisateur", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val targetUser = houseUsers.firstOrNull { it.userLogin.equals(login, ignoreCase = true) }
+        if (targetUser != null && targetUser.owner > 0) {
+            Toast.makeText(this, "Impossible: un propriétaire ne peut pas perdre son accès", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (selectedHouseOwner && currentUsername.equals(login, ignoreCase = true)) {
+            Toast.makeText(this, "Impossible de supprimer ton propre accès propriétaire", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val t = token ?: return
+        Api().delete(
+            ApiRoutes.HOUSE_USERS(houseId),
+            HouseUserPayload(login),
+            onSuccess = { code ->
+                when (code) {
+                    200 -> {
+                        Toast.makeText(this, "Accès supprimé", Toast.LENGTH_SHORT).show()
+                        etUserLogin.text?.clear()
+                        loadHouseUsers(silent = true)
+                    }
+                    403 -> Toast.makeText(this, "Action non autorisée", Toast.LENGTH_SHORT).show()
+                    else -> Toast.makeText(this, "Erreur suppression ($code)", Toast.LENGTH_SHORT).show()
+                }
+            },
+            securityToken = t
+        )
+    }
+
+    private fun renderHouseUsers() {
+        containerHouseUsers.removeAllViews()
+        if (houseUsers.isEmpty()) {
+            val emptyView = TextView(this).apply {
+                text = "Aucun utilisateur associé."
+                setTextColor(getColor(R.color.app_text_secondary))
+                setPadding(8, 8, 8, 8)
+            }
+            containerHouseUsers.addView(emptyView)
+            return
+        }
+        houseUsers.forEach { user ->
+            val row = TextView(this).apply {
+                val role = if (user.owner > 0) "Propriétaire" else "Invité"
+                text = "• ${user.userLogin} ($role)"
+                setTextColor(getColor(R.color.app_text_primary))
+                setPadding(8, 6, 8, 6)
+            }
+            containerHouseUsers.addView(row)
+        }
+    }
+
     private fun updateInfoPanel() {
         val lightsOn = allDevices.count { it.isType(TYPE_LIGHT) && (it.power ?: 0) > 0 }
         val shuttersOpen = allDevices.count { it.isType(TYPE_SHUTTER) && (it.opening ?: 0) > 0 }
         val doorsOpen = allDevices.count { it.isType(TYPE_DOOR) && !it.isType(TYPE_GARAGE) && (it.opening ?: 0) > 0 }
         val garageOpen = allDevices.count { it.isType(TYPE_GARAGE) && (it.opening ?: 0) > 0 }
 
+        tvOwner.text = if (selectedHouseOwner) "Accès : Propriétaire" else "Accès : Partagé"
         tvLightsOn.text = "Lumières allumées : $lightsOn"
         tvShuttersOpen.text = "Volets ouverts : $shuttersOpen"
         tvDoorsOpen.text = "Portes ouvertes : $doorsOpen"
         tvGarageOpen.text = "Garage ouvert : $garageOpen"
+    }
+
+    private fun renderHouseQrCode() {
+        val qrSizePx = (150 * resources.displayMetrics.density).toInt()
+        val qrBitmap = createStyledHouseQrBitmap(houseUrl, qrSizePx)
+        houseQrBitmap = qrBitmap
+        if (qrBitmap != null) {
+            ivHouseQr.setImageBitmap(qrBitmap)
+        } else {
+            ivHouseQr.setImageDrawable(null)
+        }
+    }
+
+    private fun showQrDialog() {
+        val bitmap = houseQrBitmap ?: return
+        val content = FrameLayout(this).apply {
+            val pad = (16 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad, pad, pad)
+            setBackgroundColor(Color.WHITE)
+        }
+        val image = ImageView(this).apply {
+            setImageBitmap(bitmap)
+            adjustViewBounds = true
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            minimumHeight = (280 * resources.displayMetrics.density).toInt()
+        }
+        content.addView(
+            image,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("QR Maison")
+            .setView(content)
+            .setNegativeButton("Fermer", null)
+            .setPositiveButton("Piloter la maison") { _, _ ->
+                openHouseInCustomTab(houseUrl)
+            }
+            .show()
+    }
+
+    private fun createStyledHouseQrBitmap(content: String, qrSizePx: Int): Bitmap? {
+        val qrBitmap = createQrCode(content, qrSizePx) ?: return null
+        val density = resources.displayMetrics.density
+        val padding = (10 * density).toInt()
+        val captionHeight = (28 * density).toInt()
+        val radius = 18f * density
+
+        val width = qrBitmap.width + (padding * 2)
+        val height = qrBitmap.height + (padding * 2) + captionHeight
+
+        val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(result)
+
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+        }
+        canvas.drawRoundRect(RectF(0f, 0f, width.toFloat(), height.toFloat()), radius, radius, bgPaint)
+        canvas.drawBitmap(qrBitmap, padding.toFloat(), padding.toFloat(), null)
+
+        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.BLACK
+            textSize = 18f * density
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val textBaseline = (qrBitmap.height + (padding * 2) + (captionHeight * 0.72f))
+        canvas.drawText("Pilotez moi !", width / 2f, textBaseline, textPaint)
+        return result
+    }
+
+    private fun hideLargeQrInWebView(webView: WebView) {
+        val js = """
+            (function () {
+              function hide(el) {
+                if (!el || !el.style) return;
+                el.style.display = 'none';
+                el.style.visibility = 'hidden';
+                el.style.opacity = '0';
+                el.style.pointerEvents = 'none';
+              }
+
+              var nodes = Array.prototype.slice.call(document.querySelectorAll('*'));
+              nodes.forEach(function (el) {
+                var id = (el.id || '').toLowerCase();
+                var cls = ((el.className || '') + '').toLowerCase();
+                var alt = ((el.alt || '') + '').toLowerCase();
+                var src = ((el.src || '') + '').toLowerCase();
+                var txt = ((el.textContent || '') + '').toLowerCase();
+                var qrHint = id.indexOf('qr') >= 0
+                  || cls.indexOf('qr') >= 0
+                  || alt.indexOf('qr') >= 0
+                  || src.indexOf('qr') >= 0
+                  || txt.indexOf('scan me') >= 0;
+                var logoHint = id.indexOf('polytech') >= 0
+                  || cls.indexOf('polytech') >= 0
+                  || alt.indexOf('polytech') >= 0
+                  || src.indexOf('polytech') >= 0
+                  || txt.indexOf('polytech') >= 0
+                  || txt.indexOf('dijon') >= 0;
+                if (qrHint) hide(el);
+                if (logoHint) hide(el);
+              });
+
+              ['img', 'canvas', 'svg'].forEach(function (tag) {
+                var els = document.querySelectorAll(tag);
+                els.forEach(function (el) {
+                  var r = el.getBoundingClientRect();
+                  if (!r || r.width < 120 || r.height < 120) return;
+                  var ratio = r.width / r.height;
+                  var isSquare = ratio > 0.8 && ratio < 1.25;
+                  var inTopArea = r.top < window.innerHeight * 0.85;
+                  var inLeftSide = r.left < window.innerWidth * 0.65;
+                  if (isSquare && inTopArea && inLeftSide) hide(el);
+                });
+              });
+            })();
+        """.trimIndent()
+        webView.evaluateJavascript(js, null)
+    }
+
+    private fun createQrCode(content: String, sizePx: Int): Bitmap? {
+        return try {
+            val hints = mapOf(
+                EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.H,
+                EncodeHintType.MARGIN to 1
+            )
+            val matrix = QRCodeWriter().encode(content, BarcodeFormat.QR_CODE, sizePx, sizePx, hints)
+            val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+            for (x in 0 until sizePx) {
+                for (y in 0 until sizePx) {
+                    bitmap.setPixel(x, y, if (matrix[x, y]) Color.BLACK else Color.WHITE)
+                }
+            }
+            bitmap
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun applyFiltersAndRender() {
@@ -562,10 +1049,33 @@ class DevicesActivity : AppCompatActivity() {
         btnBatchOff.isEnabled = hasSelection && !isBatchRunning
         btnSelectAll.isEnabled = !isBatchRunning && filteredDevices.isNotEmpty()
         btnClearSelection.isEnabled = hasSelection && !isBatchRunning
+
+        val groupEnabled = !isBatchRunning && allDevices.isNotEmpty()
+        btnGroupLightsOn.isEnabled = groupEnabled
+        btnGroupLightsOff.isEnabled = groupEnabled
+        btnGroupShuttersOpen.isEnabled = groupEnabled
+        btnGroupShuttersClose.isEnabled = groupEnabled
+        btnGroupGarageOpen.isEnabled = groupEnabled
+        btnGroupGarageClose.isEnabled = groupEnabled
+        btnGroupLightsGroundOn.isEnabled = groupEnabled
+        btnGroupLightsGroundOff.isEnabled = groupEnabled
+        btnGroupLightsFirstOn.isEnabled = groupEnabled
+        btnGroupLightsFirstOff.isEnabled = groupEnabled
+        btnGroupShuttersGroundOpen.isEnabled = groupEnabled
+        btnGroupShuttersGroundClose.isEnabled = groupEnabled
+        btnGroupShuttersFirstOpen.isEnabled = groupEnabled
+        btnGroupShuttersFirstClose.isEnabled = groupEnabled
+    }
+
+    private fun updateUsersAccessState() {
+        val ownerActionsEnabled = selectedHouseOwner
+        btnAddUser.isEnabled = ownerActionsEnabled
+        btnRemoveUser.isEnabled = ownerActionsEnabled
+        etUserLogin.isEnabled = ownerActionsEnabled
     }
 
     private fun refreshDevicesSoon(delayMs: Long = 350L) {
-        mainHandler.postDelayed({ loadDevices() }, delayMs)
+        mainHandler.postDelayed({ loadDevices(silent = true) }, delayMs)
     }
 
     private fun applyInstantDeviceState(deviceId: String, targetOn: Boolean) {
@@ -585,7 +1095,46 @@ class DevicesActivity : AppCompatActivity() {
 
     private fun normalizeCommand(value: String): String = value.lowercase().replace("_", " ").trim()
 
-    private fun Device.isType(typeKey: String): Boolean = type.lowercase().contains(typeKey)
+    private fun Device.isType(typeKey: String): Boolean {
+        val haystack = "${type.lowercase()} ${id.lowercase()}"
+        return when (typeKey) {
+            TYPE_LIGHT -> listOf("light", "lumi", "lampe").any { haystack.contains(it) }
+            TYPE_SHUTTER -> listOf("shutter", "volet", "blind").any { haystack.contains(it) }
+            TYPE_DOOR -> listOf("door", "porte", "entry", "gate").any { haystack.contains(it) }
+            TYPE_GARAGE -> listOf("garage").any { haystack.contains(it) }
+            else -> haystack.contains(typeKey.lowercase())
+        }
+    }
+
+    private fun resolveFloorZone(device: Device): FloorZone? {
+        val text = "${device.id} ${device.type}".lowercase()
+
+        val groundKeywords = listOf("rdc", "rez", "rez-de-chauss", "ground")
+        val firstKeywords = listOf("1er", "etage", "étage", "first")
+        if (groundKeywords.any { text.contains(it) }) return FloorZone.GROUND
+        if (firstKeywords.any { text.contains(it) }) return FloorZone.FIRST
+
+        // Common naming pattern: #Shutter 1.x (RDC), #Shutter 2.x (1er étage)
+        val levelPrefix = Regex("""([12])\s*[._-]\s*\d+""").find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()
+        if (levelPrefix == 1) return FloorZone.GROUND
+        if (levelPrefix == 2) return FloorZone.FIRST
+
+        // Fallback: single level digit near shutter/light naming (1 => RDC, 2 => 1er)
+        val namedLevel = Regex("""(?:shutter|light|volet|lumi[eè]re)\D*([12])""").find(text)
+            ?.groupValues?.getOrNull(1)?.toIntOrNull()
+        if (namedLevel == 1) return FloorZone.GROUND
+        if (namedLevel == 2) return FloorZone.FIRST
+
+        // Last fallback: last number in id/type (0 => RDC, 1 => 1er)
+        val lastNumber = Regex("""(\d+)""").findAll(text)
+            .mapNotNull { it.groupValues.getOrNull(1)?.toIntOrNull() }
+            .lastOrNull()
+        return when (lastNumber) {
+            0 -> FloorZone.GROUND
+            1 -> FloorZone.FIRST
+            else -> null
+        }
+    }
 
     private fun deviceIsOn(device: Device): Boolean = (device.power ?: 0) > 0 || (device.opening ?: 0) > 0
 }

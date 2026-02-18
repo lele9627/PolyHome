@@ -6,6 +6,7 @@ object ApiRoutes {
     const val AUTH = "$BASE/api/users/auth"
 
     const val HOUSES = "$BASE/api/houses"
+    fun HOUSE_USERS(houseId: Int) = "$BASE/api/houses/$houseId/users"
     fun DEVICES(houseId: Int) = "$BASE/api/houses/$houseId/devices"
     fun DEVICE_COMMAND_PATH(houseId: Int, deviceId: String, command: String) =
         "$BASE/api/houses/$houseId/devices/$deviceId/command/$command"
