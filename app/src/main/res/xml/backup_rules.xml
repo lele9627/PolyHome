@@ -1,13 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
+   Exemple de règles de sauvegarde ; décommentez et adaptez selon les besoins.
+   Consultez https://developer.android.com/guide/topics/data/autobackup
+   pour plus de détails.
+   Remarque : ce fichier est ignoré sur les appareils antérieurs à l’API 31.
+   Consultez https://developer.android.com/about/versions/12/backup-restore
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <!-- Les jetons d’accès Bearer et les comptes mémorisés ne doivent pas quitter l’appareil. -->
+    <exclude domain="sharedpref" path="auth.xml" />
+    <exclude domain="sharedpref" path="auth_users.xml" />
 </full-backup-content>

@@ -1,16 +1,38 @@
+# Gradle et Kotlin
+.gradle/
+.gradle-user-home/
+.kotlin/
+build/
+**/build/
+
+# Configuration locale Android et variables d'environnement
+local.properties
+.env
+.env.*
+!.env.example
+
+# Matériel de signature et applications empaquetées
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.apk
+*.ap_
+*.aab
+*.dex
+
+# Outils Android
+captures/
+.externalNativeBuild/
+.cxx/
+*.hprof
+
+# Android Studio / IntelliJ IDEA
 .idea/
 *.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
+out/
+
+# Systèmes d'exploitation et journaux
 .DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
-local.properties
+Thumbs.db
+*.log
