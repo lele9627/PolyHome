@@ -145,7 +145,7 @@ class LoginActivity : AppCompatActivity() {
                 ApiRoutes.AUTH,
                 AuthRequest(login, password),
                 onSuccess = { code, body ->
-                    Log.d("API", "AUTH code=$code body=$body")
+                    Log.d("API", "AUTH code=$code")
                     btnDoLogin.isEnabled = true
 
                     if (code in 200..299 && body?.token?.isNotBlank() == true) {

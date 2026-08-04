@@ -3,6 +3,15 @@ plugins {
     alias(libs.plugins.kotlin.android)
 }
 
+val defaultApiBaseUrl = "https://polyhome.lesmoulinsdudev.com"
+val configuredApiBaseUrl = providers.environmentVariable("POLYHOME_API_BASE_URL")
+    .orElse(providers.gradleProperty("POLYHOME_API_BASE_URL"))
+    .getOrElse(defaultApiBaseUrl)
+    .trimEnd('/')
+val escapedApiBaseUrl = configuredApiBaseUrl
+    .replace("\\", "\\\\")
+    .replace("\"", "\\\"")
+
 android {
     namespace = "com.example.projet_androide"
     compileSdk {
@@ -17,6 +26,7 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "POLYHOME_API_BASE_URL", "\"$escapedApiBaseUrl\"")
     }
 
     buildTypes {
@@ -34,6 +44,9 @@ android {
     }
     kotlinOptions {
         jvmTarget = "11"
+    }
+    buildFeatures {
+        buildConfig = true
     }
 }
 dependencies {

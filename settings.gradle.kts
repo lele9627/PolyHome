@@ -19,6 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Projet_Androide"
+rootProject.name = "PolyHome"
 include(":app")
- 
